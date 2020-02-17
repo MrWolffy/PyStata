@@ -1,17 +1,22 @@
-import pandas
+import funclib
+import pandas as pd
 import re
 
 
-class StataPlatform:
+def print_red(message):
+    print('\033[1;31m' + message + '\033[0m')
+
+
+class StataInterpreter:
     def __init__(self):
         pass
 
     @staticmethod
-    def parse(command: str):
+    def parse(command: str) -> tuple:
         # parse 'by'
         tmp = re.search(r'by\s+(.+)\s*:', command)
         if tmp is not None:
-            by = tmp.group(1)
+            by = re.split(r'\s', tmp.group(1))
             command = re.sub(r'by\s+(.+)\s*:', '', command)
         else:
             by = None
@@ -49,9 +54,18 @@ class StataPlatform:
             raise SyntaxError('no command given')
         return by, command[0], command[1:], _if, _in, weight, option
 
+
+class StataPlatform:
+    def __init__(self):
+        self.data = None
+        self.meta = None
+        self.macro = {}
+        self.r = {}
+        self.interpreter = StataInterpreter()
+
     @staticmethod
-    def split(data: pandas.DataFrame, by: str):
-        return data
+    def split(data: pd.DataFrame, by: list) -> pd.core.groupby.SeriesGroupBy:
+        return data.groupby(by)
 
     def run(self):
         welcome = '''
@@ -68,11 +82,22 @@ ___/   /   /___/   /   /___/          Copyright 1985-2015 StataCorp LP
         print(welcome)
         while True:
             command = input()
-            by, command, args, _if, _in, weight, option = self.parse(command)
+            by, command, args, _if, _in, weight, option = self.interpreter.parse(command)
             print(by, command, args, _if, _in, weight, option)
-            # command = eval(command)
-            # for data_slice in split(self.data, by=by):
-            #     command.__call__(data_slice, args, _if=_if, _in=_in, weight=weight, option=option)
+            try:
+                self.__getattribute__(command)
+            except AttributeError:
+                try:
+                    self.__setattr__(command, eval('funclib.' + command))
+                except AttributeError:
+                    print_red('no command named \'%s\'' % command)
+                    continue
+            if by is None:
+                self.__dict__[command](self, self.data, args, _if=_if, _in=_in, weight=weight, option=option)
+            else:
+                for group, data_slice in self.split(self.data, by=by):
+                    self.__dict__[command].__call__(self, data_slice, args,
+                                                    _if=_if, _in=_in, weight=weight, option=option)
 
 
 if __name__ == '__main__':
