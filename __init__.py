@@ -1,15 +1,17 @@
 import funclib
 import pandas as pd
 import re
-
-
-def print_red(message):
-    print('\033[1;31m' + message + '\033[0m')
+import pyreadstat
+from util import *
 
 
 class StataInterpreter:
     def __init__(self):
         pass
+
+    @staticmethod
+    def getinput() -> str:
+        return input('. ')
 
     @staticmethod
     def parse(command: str) -> tuple:
@@ -26,7 +28,7 @@ class StataInterpreter:
             option = re.split(r'\s', tmp.group(1))
             command = re.sub(r',\s*(.+)', '', command)
         else:
-            option = None
+            option = []
         # parse 'weight'
         tmp = re.search(r'\[(.+)\]', command)
         if tmp is not None:
@@ -57,15 +59,12 @@ class StataInterpreter:
 
 class StataPlatform:
     def __init__(self):
-        self.data = None
-        self.meta = None
+        self.data = pd.DataFrame()
+        self.meta = pyreadstat._readstat_parser.metadata_container()
         self.macro = {}
         self.r = {}
+        self.globals = {}
         self.interpreter = StataInterpreter()
-
-    @staticmethod
-    def split(data: pd.DataFrame, by: list) -> pd.core.groupby.SeriesGroupBy:
-        return data.groupby(by)
 
     def run(self):
         welcome = '''
@@ -81,9 +80,14 @@ ___/   /   /___/   /   /___/          Copyright 1985-2015 StataCorp LP
 '''
         print(welcome)
         while True:
-            command = input()
-            by, command, args, _if, _in, weight, option = self.interpreter.parse(command)
-            print(by, command, args, _if, _in, weight, option)
+            command = self.interpreter.getinput()
+            try:
+                by, command, args, _if, _in, weight, option = self.interpreter.parse(command)
+                print('call %s by using by=%s, args=%s, if=%s, in=%s, weight=%s, option=%s' %
+                      (str(command), str(by), str(args), str(_if), str(_in), str(weight), str(option)))
+            except SyntaxError as e:
+                print_red(e.msg)
+                continue
             try:
                 self.__getattribute__(command)
             except AttributeError:
@@ -92,12 +96,13 @@ ___/   /   /___/   /   /___/          Copyright 1985-2015 StataCorp LP
                 except AttributeError:
                     print_red('no command named \'%s\'' % command)
                     continue
-            if by is None:
-                self.__dict__[command](self, self.data, args, _if=_if, _in=_in, weight=weight, option=option)
-            else:
-                for group, data_slice in self.split(self.data, by=by):
-                    self.__dict__[command].__call__(self, data_slice, args,
-                                                    _if=_if, _in=_in, weight=weight, option=option)
+            # try:
+            #     self.__dict__[command](self, args,
+            #                            by=by, _if=_if, _in=_in, weight=weight, option=option)
+            # except BaseException as e:
+            #     print_red(e.args)
+            self.__dict__[command](self, args,
+                                   by=by, _if=_if, _in=_in, weight=weight, option=option)
 
 
 if __name__ == '__main__':
