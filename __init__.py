@@ -65,6 +65,7 @@ class StataPlatform:
         self.r = {}
         self.globals = {}
         self.interpreter = StataInterpreter()
+        self.program_to_be_exit = False
 
     def run(self):
         welcome = '''
@@ -79,11 +80,11 @@ ___/   /   /___/   /   /___/          Copyright 1985-2015 StataCorp LP
                                       979-696-4601 (fax)
 '''
         print(welcome)
-        while True:
+        while not self.program_to_be_exit:
             command = self.interpreter.getinput()
             try:
                 by, command, args, _if, _in, weight, option = self.interpreter.parse(command)
-                print('call %s by using by=%s, args=%s, if=%s, in=%s, weight=%s, option=%s' %
+                print('call %s(by=%s, args=%s, if=%s, in=%s, weight=%s, option=%s)' %
                       (str(command), str(by), str(args), str(_if), str(_in), str(weight), str(option)))
             except SyntaxError as e:
                 print_red(e.msg)

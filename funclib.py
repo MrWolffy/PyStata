@@ -1,14 +1,16 @@
 from __init__ import StataPlatform
 from sys import exit as sysexit
 from sys import getsizeof
+import re
 import numpy as np
 import pandas as pd
+from scipy import stats
 import pyreadstat
 from util import *
 
 
 def sysuse(self: StataPlatform, args: List[str],
-           by: Union[List[str], None], _if: Union[str, None], _in: Union[str, None],
+           by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
            weight: Union[str, None], option: List[str]):
     """
 Title
@@ -75,7 +77,7 @@ Syntax
 
 
 def describe(self: StataPlatform, args: List[str],
-             by: Union[List[str], None], _if: Union[str, None], _in: Union[str, None],
+             by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
              weight: Union[str, None], option: List[str]):
     """
 Title
@@ -206,7 +208,7 @@ Syntax
 
 
 def exit(self: StataPlatform, args: List[str],
-         by: Union[List[str], None], _if: Union[str, None], _in: Union[str, None],
+         by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
          weight: Union[str, None], option: List[str]):
     """
 Title
@@ -246,7 +248,7 @@ Syntax
 
 
 def summarize(self: StataPlatform, args: List[str],
-              by: Union[List[str], None], _if: Union[str, None], _in: Union[str, None],
+              by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
               weight: Union[str, None], option: List[str]):
     """
 Title
@@ -261,6 +263,8 @@ Syntax
     options           Description
     -------------------------------------------------------------------------
     detail            display additional statistics
+    separator(#)      draw separator line after every # variables; default is
+                        separator(5)
     -------------------------------------------------------------------------
     varlist may contain factor variables; see fvvarlist.
     varlist may contain time-series operators; see tsvarlist.
@@ -271,6 +275,107 @@ Syntax
 
 
 """
+
+    def check_input():
+        for i, opt in enumerate(option):
+            if i >= 2 or re.search(opt, r'(detail|seperator\(\d+\))') is None:
+                raise SyntaxError('option %s not allowed' % opt)
+
+    def summarize_detail(data, varlist):
+        def cal_descriptions(data: pd.Series):
+            obs = np.sum(np.logical_and(np.logical_not(list(map(lambda x: isinstance(x, str), data))),
+                                        np.logical_not(data == np.nan)))
+            if obs == 0:
+                return obs
+            percentiles = {str(percent) + '%': np.percentile(data, percent, interpolation='higher')
+                           for percent in [1, 5, 10, 25, 50, 75, 90, 95, 99]}
+            percentiles['50%'] = np.percentile(data, 50, interpolation='linear')
+            sorted_value = np.sort(data)
+            smallest = sorted_value[:4]
+            largest = sorted_value[-4:]
+            sum_of_wgt = None
+            mean = data.mean()
+            stddev = data.std()
+            variance = stddev ** 2
+            skew = stats.skew(data.values)
+            kurt = stats.kurtosis(data.values) + 3
+            return percentiles, smallest, largest, obs, sum_of_wgt, mean, stddev, variance, skew, kurt
+
+        for var in varlist:
+            vals = cal_descriptions(data[var])
+            print(self.meta.column_labels[np.where(data.columns.values == var)[0][0]].center(61, ' '))
+            print('-------------------------------------------------------------')
+            if vals == 0:
+                print('no observations')
+            else:
+                print('      Percentiles      Smallest')
+                print(' 1%%     %s       %s' %
+                      (parse_number(vals[0]['1%']), parse_number(vals[1][0])))
+                print(' 5%%     %s       %s' %
+                      (parse_number(vals[0]['5%']), parse_number(vals[1][1])))
+                print('10%%     %s       %s       Obs            %s' %
+                      (parse_number(vals[0]['10%']), parse_number(vals[1][2]), parse_number(vals[3])))
+                print('25%%     %s       %s       Sum of Wgt.            ' %
+                      (parse_number(vals[0]['25%']), parse_number(vals[1][3])))
+                print()
+                print('50%%     %s                      Mean           %s' %
+                      (parse_number(vals[0]['50%']), parse_number(vals[5])))
+                print('                        Largest       Std. Dev.      %s' %
+                      parse_number(vals[6]))
+                print('75%%     %s       %s' %
+                      (parse_number(vals[0]['75%']), parse_number(vals[2][0])))
+                print('90%%     %s       %s       Variance       %s' %
+                      (parse_number(vals[0]['90%']), parse_number(vals[2][1]), parse_number(vals[7])))
+                print('95%%     %s       %s       Skewness       %s' %
+                      (parse_number(vals[0]['95%']), parse_number(vals[2][2]), parse_number(vals[8])))
+                print('99%%     %s       %s       Kurtosis       %s' %
+                      (parse_number(vals[0]['99%']), parse_number(vals[2][3]), parse_number(vals[9])))
+            print()
+
+    def summarize_(data, varlist):
+        def cal_descriptions(data: pd.Series) -> tuple:
+            obs = np.sum(np.logical_and(np.logical_not(list(map(lambda x: isinstance(x, str), data))),
+                                        np.logical_not(data == np.nan)))
+            if obs == 0:
+                return obs, None, None, None, None
+            mean = data.mean()
+            stddev = data.std()
+            _min = data.min()
+            _max = data.max()
+            return obs, mean, stddev, _min, _max
+
+        sep = 5
+        for opt in option:
+            result = re.search(opt, r'seperator\((\d+\))')
+            if result:
+                sep = int(result.group(1))
+        print('    Variable |        Obs        Mean    Std. Dev.       Min        Max')
+        print('-------------+---------------------------------------------------------')
+        for i, var in enumerate(varlist):
+            vals = cal_descriptions(data[var])
+            print(parse_varname(var, 12, 'r'), '|', end='   ')
+            print('%s' % parse_number(vals[0]), end='    ')
+            if vals[0] != 0:
+                print('%s' % parse_number(vals[1]), end='    ')
+                print('%s' % parse_number(vals[2]), end='   ')
+                print('%s' % parse_number(vals[3]), end='   ')
+                print('%s' % parse_number(vals[4]), end='')
+            print()
+            if (i + 1) % sep == 0:
+                print('-------------+---------------------------------------------------------')
+
+    def main():
+        check_input()
+        data = split_data(self.data, _in, _if, by)
+        varlist = get_varlist(args, data)
+        if 'detail' in option:
+            summarize_detail(data, varlist)
+        else:
+            summarize_(data, varlist)
+
+    main()
+
+
 
 
 
