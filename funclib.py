@@ -1,7 +1,6 @@
 from __init__ import StataPlatform
 from sys import exit as sysexit
 from sys import getsizeof
-import re
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -10,8 +9,8 @@ from util import *
 
 
 def sysuse(self: StataPlatform, args: List[str],
-           by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
-           weight: Union[str, None], option: List[str]):
+           by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+           weight: Optional[str], option: List[str]):
     """
 Title
 
@@ -77,8 +76,8 @@ Syntax
 
 
 def describe(self: StataPlatform, args: List[str],
-             by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
-             weight: Union[str, None], option: List[str]):
+             by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+             weight: Optional[str], option: List[str]):
     """
 Title
 
@@ -208,8 +207,8 @@ Syntax
 
 
 def exit(self: StataPlatform, args: List[str],
-         by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
-         weight: Union[str, None], option: List[str]):
+         by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+         weight: Optional[str], option: List[str]):
     """
 Title
 
@@ -248,8 +247,8 @@ Syntax
 
 
 def summarize(self: StataPlatform, args: List[str],
-              by: Union[List[str], None], _if: Union[str, None], _in: Union[Tuple[int, int], None],
-              weight: Union[str, None], option: List[str]):
+              by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+              weight: Optional[str], option: List[str]):
     """
 Title
 
@@ -365,7 +364,11 @@ Syntax
                 print('-------------+---------------------------------------------------------')
 
     def main():
-        check_input()
+        try:
+            check_input()
+        except SyntaxError as e:
+            print_red(e.msg)
+            return
         data = split_data(self.data, _in, _if, by)
         varlist = get_varlist(args, data)
         if 'detail' in option:
@@ -376,7 +379,105 @@ Syntax
     main()
 
 
+def regress(self: StataPlatform, args: List[str],
+            by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+            weight: Optional[str], option: List[str]):
+    """
+Title
 
+    [R] regress -- Linear regression
+
+
+Syntax
+
+        regress depvar [indepvars] [if] [in] [weight] [, options]
+
+
+"""
+    def check_input():
+        if len(args) == 0:
+            raise SyntaxError('no variable provided')
+        if len(args) == 1:
+            raise SyntaxError('no independent variable provided')
+        check_option(option)
+
+    def estimate(y: np.ndarray, X: np.ndarray):
+        n, k = X.shape
+        try:
+            inv = np.linalg.inv(X.T.dot(X))
+        except:
+            raise RuntimeError('collinearity exists, no estimation can be carried out')
+        ret = dict()
+        # estimation
+        ret['beta'] = inv.dot(X.T).dot(y)
+        e = X.dot(ret['beta']) - y
+        # upperleft table
+        M0 = np.eye(n) - np.ones((n, n)) / n
+        ret['SST'] = y.T.dot(M0).dot(y)
+        ret['SSR'] = ret['beta'].T.dot(X.T).dot(M0).dot(X).dot(ret['beta'])
+        ret['SSE'] = e.T.dot(e)
+        ret['df'] = (n - 1, k - 1, n - k)
+        ret['MS'] = (ret['SST'] / ret['df'][0], ret['SSR'] / ret['df'][1], ret['SSE'] / ret['df'][2])
+        # bottom table
+        sigma_sq = e.T.dot(e) / (n - k)
+        ret['std_err'] = sigma_sq * np.linalg.inv(X.T.dot(X))
+        ret['std_err'] = np.sqrt([ret['std_err'][i, i] for i in range(k)])
+        ret['t'] = ret['beta'] / ret['std_err']
+        ret['p'] = (1 - stats.t.cdf(ret['t'], df=n - k)) * 2
+        ret['CI'] = stats.t.interval(0.95, n - k, ret['beta'], ret['std_err'])
+        # upperright table
+        ret['no_of_obs'] = n
+        ret['F_df'] = ret['df'][1:3]
+        ret['R_sq'] = ret['SSR'] / ret['SST']
+        ret['F'] = (ret['R_sq'] / ret['F_df'][0]) / ((1 - ret['R_sq']) / ret['F_df'][1])
+        ret['F_prob'] = 1 - stats.f.cdf(ret['F'], dfn=ret['F_df'][0], dfd=ret['F_df'][1])
+        ret['adj_R_sq'] = 1 - (n - 1) / (n - k) * (1 - ret['R_sq'])
+        ret['MSE'] = np.sqrt(ret['MS'][2])
+        return ret
+
+    def main():
+        try:
+            check_input()
+        except SyntaxError as e:
+            print_red(e.msg)
+            return
+        data = split_data(self.data, _in, _if, by)
+        data = data[args].values[np.all(~np.isnan(data[args].values), axis=1)]
+        y, X = data[:, 0], data[:, 1:]
+        X = np.concatenate((X, np.ones((X.shape[0], 1))), axis=1)
+        try:
+            coef = estimate(y, X)
+        except RuntimeError as e:
+            print_red(e.args)
+            return
+        print('      Source |       SS           df       MS      Number of obs   = %s'
+              % parse_number(coef['no_of_obs'], length=9))
+        print('-------------+----------------------------------   F%s = %9.2f'
+              % (('(%d, %d)' % (coef['F_df'][0], coef['F_df'][1])).ljust(14, ' '), coef['F']))
+        print('       Model |  %s %s  %s   Prob > F        =    %.4f'
+              % (parse_number(coef['SSR'], length=10), parse_number(coef['df'][1], length=9),
+                 parse_number(coef['MS'][1], length=10), coef['F_prob']))
+        print('    Residual |  %s %s  %s   R-squared       =    %.4f'
+              % (parse_number(coef['SSE'], length=10), parse_number(coef['df'][2], length=9),
+                 parse_number(coef['MS'][2], length=10), coef['R_sq']))
+        print('-------------+----------------------------------   Adj R-squared   =    %.4f'
+              % coef['adj_R_sq'])
+        print('       Total |  %s %s  %s   Root MSE        =    %s'
+              % (parse_number(coef['SST'], length=10), parse_number(coef['df'][0], length=9),
+                 parse_number(coef['MS'][0], length=10), parse_number(coef['MSE'], length=6)))
+        print()
+        print('------------------------------------------------------------------------------')
+        print('%s |      Coef.   Std. Err.      t    P>|t|     [95%% Conf. Interval]'
+              % parse_varname(args[0], length=12))
+        print('-------------+----------------------------------------------------------------')
+        for i, varname in enumerate(args[1:] + ['_cons']):
+            print('%s |   %s   %s   %6.2f   %.3f     %s    %s'
+                  % (parse_varname(varname, length=12), parse_number(coef['beta'][i]),
+                     parse_number(coef['std_err'][i]), coef['t'][i], coef['p'][i],
+                     parse_number(coef['CI'][0][i]), parse_number(coef['CI'][1][i])))
+        print('------------------------------------------------------------------------------')
+
+    main()
 
 
 

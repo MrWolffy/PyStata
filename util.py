@@ -1,4 +1,4 @@
-from typing import Union, List, Iterable, Tuple
+from typing import Union, List, Iterable, Tuple, Optional
 from pandas import DataFrame
 import re
 
@@ -15,12 +15,14 @@ def parse_varname(name: str, length: int, pos='l') -> str:
 
 
 def parse_number(number, length=8):
-    if 0.1 < abs(number) < 1:
-        return ('%.7f' % number)[1:9]
-    elif number > 1e7:
-        return '%8.3g' % number
+    if number < 0:
+        return re.sub(r'-( +)', r'\1-', '-' + parse_number(abs(number), length=length-1))
+    elif 0.1 < abs(number) < 1:
+        return (('%%.%df' % (length - 1)) % number)[1:length+1]
+    elif number > 10 ** (length - 1):
+        return ('%%%d.3g' % length) % number
     else:
-        return '%8.7g' % number
+        return ('%%%d.%dg' % (length, length - 1)) % number
 
 
 def get_varlist(vars: List[str], data: DataFrame) -> Iterable:
@@ -38,22 +40,22 @@ def check_args(args: List[str]):
         raise SyntaxError('%s not allowed' % args[0])
 
 
-def check_by(by: Union[List[str], None]):
+def check_by(by: Optional[List[str]]):
     if by is not None:
         raise SyntaxError(' may not be combined with by')
 
 
-def check_if(_if: Union[str, None]):
+def check_if(_if: Optional[str]):
     if _if is not None:
         raise SyntaxError('if not allowed')
 
 
-def check_in(_in: Union[Tuple[int, int], None]):
+def check_in(_in: Optional[Tuple[int, int]]):
     if _in is not None:
         raise SyntaxError('in range not allowed')
 
 
-def check_weight(weight: Union[str, None]):
+def check_weight(weight: Optional[str]):
     if weight is not None:
         raise SyntaxError('weights not allowed')
 
@@ -63,8 +65,8 @@ def check_option(option: List[str]):
         raise SyntaxError('option %s not allowed' % option[0])
 
 
-def split_data(data: DataFrame, _in: Union[Tuple[int, int], None],
-               _if: Union[str, None], by: Union[List[str], None]) \
+def split_data(data: DataFrame, _in: Optional[Tuple[int, int]],
+               _if: Optional[str], by: Optional[List[str]]) \
         -> Union[DataFrame, Iterable[DataFrame]]:
     if _in is not None:
         data = data[_in[0]:_in[1]]
