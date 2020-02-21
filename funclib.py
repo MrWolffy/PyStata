@@ -399,7 +399,9 @@ Syntax
             raise SyntaxError('no variable provided')
         if len(args) == 1:
             raise SyntaxError('no independent variable provided')
-        check_option(option)
+        for i, opt in enumerate(option):
+            if i >= 1 or opt != 'noconstant':
+                raise SyntaxError('option %s not allowed' % opt)
 
     def estimate(y: np.ndarray, X: np.ndarray):
         n, k = X.shape
@@ -423,7 +425,7 @@ Syntax
         ret['std_err'] = sigma_sq * np.linalg.inv(X.T.dot(X))
         ret['std_err'] = np.sqrt([ret['std_err'][i, i] for i in range(k)])
         ret['t'] = ret['beta'] / ret['std_err']
-        ret['p'] = (1 - stats.t.cdf(ret['t'], df=n - k)) * 2
+        ret['p'] = (1 - stats.t.cdf(np.abs(ret['t']), df=n - k)) * 2
         ret['CI'] = stats.t.interval(0.95, n - k, ret['beta'], ret['std_err'])
         # upperright table
         ret['no_of_obs'] = n
@@ -436,6 +438,7 @@ Syntax
         return ret
 
     def main():
+        nonlocal args
         try:
             check_input()
         except SyntaxError as e:
@@ -444,7 +447,9 @@ Syntax
         data = split_data(self.data, _in, _if, by)
         data = data[args].values[np.all(~np.isnan(data[args].values), axis=1)]
         y, X = data[:, 0], data[:, 1:]
-        X = np.concatenate((X, np.ones((X.shape[0], 1))), axis=1)
+        if 'noconstant' not in option:
+            X = np.concatenate((X, np.ones((X.shape[0], 1))), axis=1)
+            args = args + ['_cons']
         try:
             coef = estimate(y, X)
         except RuntimeError as e:
@@ -470,7 +475,7 @@ Syntax
         print('%s |      Coef.   Std. Err.      t    P>|t|     [95%% Conf. Interval]'
               % parse_varname(args[0], length=12))
         print('-------------+----------------------------------------------------------------')
-        for i, varname in enumerate(args[1:] + ['_cons']):
+        for i, varname in enumerate(args[1:]):
             print('%s |   %s   %s   %6.2f   %.3f     %s    %s'
                   % (parse_varname(varname, length=12), parse_number(coef['beta'][i]),
                      parse_number(coef['std_err'][i]), coef['t'][i], coef['p'][i],
