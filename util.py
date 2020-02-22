@@ -1,5 +1,5 @@
 from typing import Union, List, Iterable, Tuple, Optional
-from pandas import DataFrame
+from pandas import DataFrame, Index
 import re
 
 
@@ -25,7 +25,7 @@ def parse_number(number, length=8):
         return ('%%%d.%dg' % (length, length - 1)) % number
 
 
-def get_varlist(vars: List[str], data: DataFrame) -> Iterable:
+def get_varlist(vars: List[str], data: DataFrame) -> Union[List[str], Index]:
     if vars:
         try:
             _ = [data[arg] for arg in vars]

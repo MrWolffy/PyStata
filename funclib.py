@@ -366,11 +366,11 @@ Syntax
     def main():
         try:
             check_input()
+            data = split_data(self.data, _in, _if, by)
+            varlist = get_varlist(args, data)
         except SyntaxError as e:
             print_red(e.msg)
             return
-        data = split_data(self.data, _in, _if, by)
-        varlist = get_varlist(args, data)
         if 'detail' in option:
             summarize_detail(data, varlist)
         else:
@@ -485,4 +485,53 @@ Syntax
     main()
 
 
+def pwcorr(self: StataPlatform, args: List[str],
+           by: Optional[List[str]], _if: Optional[str], _in: Optional[Tuple[int, int]],
+           weight: Optional[str], option: List[str]):
+    """
+Title
+
+    [R] correlate -- Correlations (covariances) of variables or coefficients
+
+
+Syntax
+
+    Display all pairwise correlation coefficients
+
+        pwcorr [varlist] [if] [in] [weight]
+
+
+"""
+    def check_input():
+        check_option(option)
+
+    def main():
+        try:
+            check_input()
+            data = split_data(self.data, _in, _if, by)
+            varlist = get_varlist(args, data)
+        except SyntaxError as e:
+            print_red(e.msg)
+            return
+        for var in varlist:
+            if isinstance(data[var][0], str):
+                varlist = varlist.drop(var)
+        batch = 0
+        while len(varlist) - batch * 7 > 0:
+            count = min(7, len(varlist) - batch * 7)
+            print(' '.join(['             |'] +
+                           [parse_varname(var, 8, pos='r')
+                            for var in varlist[batch * 7:batch * 7 + count]]))
+            print('-------------+' + '-' * 9 * count)
+            for i in range(batch * 7, len(varlist)):
+                print('%s |' % parse_varname(varlist[i], 12, pos='r'), end='')
+                for j in range(7):
+                    if j + batch * 7 > i:
+                        break
+                    print('%9.4f' % data[varlist[i]].corr(data[varlist[j + batch * 7]]), end='')
+                print()
+            batch += 1
+            print()
+
+    main()
 
